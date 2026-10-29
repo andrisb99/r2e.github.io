@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nyugta Feldolgozó / Receipt Extractor</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-indigo-600 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-receipt text-2xl text-amber-300"></i>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight" id="appTitle">Nyugta Feldolgozó AI</h1>
+                    <p class="text-xs text-indigo-200" id="appSubtitle">Képből Excel táblázat másodpercek alatt</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <!-- Currency Selector -->
+                <div class="flex items-center space-x-1 text-xs bg-indigo-700/50 px-2 py-1.5 rounded-lg border border-indigo-400/30">
+                    <i class="fa-solid fa-coins text-amber-300"></i>
+                    <select id="currencySelect" onchange="handleCurrencyChange()" class="bg-transparent font-medium text-white focus:outline-none cursor-pointer">
+                        <option value="HUF" class="text-slate-800" selected>HUF (Ft)</option>
+                        <option value="EUR" class="text-slate-800">EUR (€)</option>
+                        <option value="USD" class="text-slate-800">USD ($)</option>
+                        <option value="GBP" class="text-slate-800">GBP (£)</option>
+                    </select>
+                </div>
+
+                <!-- Language Toggle -->
+                <div class="flex items-center bg-indigo-700/50 p-0.5 rounded-lg border border-indigo-400/30 text-xs font-semibold">
+                    <button id="langHuBtn" onclick="setLanguage('hu')" class="px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-sm transition">HU</button>
+                    <button id="langEnBtn" onclick="setLanguage('en')" class="px-2.5 py-1 rounded-md text-indigo-200 hover:text-white transition">EN</button>
+                </div>
+
+                <!-- API Key Button (Hidden if hardcoded) -->
+                <button id="openKeyModalBtn" class="bg-indigo-700 hover:bg-indigo-800 text-xs sm:text-sm px-3.5 py-1.5 rounded-lg border border-indigo-400/30 transition flex items-center space-x-2">
+                    <i class="fa-solid fa-key text-amber-300"></i>
+                    <span id="keyStatusText">API Kulcs</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Left Side: Image Upload & Preview -->
+            <div class="lg:col-span-5 flex flex-col space-y-4">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col h-full">
+                    <h2 class="text-base font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+                        <i class="fa-solid fa-image text-indigo-500"></i>
+                        <span id="lblReceiptImage">Nyugta Kép</span>
+                    </h2>
+
+                    <!-- Upload Box -->
+                    <div id="dropZone" class="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/50 hover:bg-indigo-50 rounded-xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center min-h-[220px] relative">
+                        <input type="file" id="imageInput" accept="image/*" class="hidden">
+                        <div id="uploadPlaceholder" class="space-y-3">
+                            <div class="w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center mx-auto text-xl">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-slate-700" id="uploadMainText">Kattints a feltöltéshez vagy húzd ide a képet</p>
+                                <p class="text-xs text-slate-400 mt-1">PNG, JPG, JPEG, WEBP</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Image Preview -->
+                        <div id="imagePreviewContainer" class="hidden w-full flex flex-col items-center">
+                            <div class="relative max-h-[420px] w-full overflow-hidden rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center">
+                                <img id="imagePreview" class="max-h-[420px] object-contain transition-transform duration-200" src="" alt="Receipt Preview">
+                            </div>
+                            <div class="mt-3 flex space-x-2">
+                                <button id="changeImgBtn" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-md transition flex items-center space-x-1">
+                                    <i class="fa-solid fa-arrows-rotate"></i>
+                                    <span id="btnChange">Csere</span>
+                                </button>
+                                <button id="rotateImgBtn" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-md transition flex items-center space-x-1">
+                                    <i class="fa-solid fa-rotate-right"></i>
+                                    <span id="btnRotate">Forgatás</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Process Action Button -->
+                    <button id="extractBtn" disabled class="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium py-2.5 px-4 rounded-xl shadow-sm transition flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i>
+                        <span id="btnExtract">Adatok kinyerése a Gemini AI-val</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Side: Extracted Data & Table -->
+            <div class="lg:col-span-7 flex flex-col space-y-4">
+                
+                <!-- Status & Metadata Panel -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4 border-b border-slate-100 pb-3">
+                        <h2 class="text-base font-semibold text-slate-800 flex items-center space-x-2">
+                            <i class="fa-solid fa-table text-indigo-500"></i>
+                            <span id="lblExtractedDetails">Kinyert Adatok</span>
+                        </h2>
+                        <div class="flex items-center space-x-2">
+                            <button id="exportCsvBtn" disabled class="bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 text-xs sm:text-sm px-3 py-1.5 rounded-lg border border-slate-300 transition flex items-center space-x-1.5">
+                                <i class="fa-solid fa-file-csv text-emerald-600"></i>
+                                <span>CSV</span>
+                            </button>
+                            <button id="exportExcelBtn" disabled class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs sm:text-sm px-3.5 py-1.5 rounded-lg transition shadow-sm flex items-center space-x-1.5">
+                                <i class="fa-solid fa-file-excel"></i>
+                                <span id="btnExportExcel">Excel letöltés (.xlsx)</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Receipt Header Metadata Fields -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs sm:text-sm">
+                        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                            <label class="block text-slate-400 text-[11px] font-medium uppercase tracking-wider mb-0.5" id="lblStore">Bolt / Kereskedő</label>
+                            <input type="text" id="metaStore" placeholder="Bolt neve" class="w-full bg-transparent font-medium text-slate-800 focus:outline-none focus:border-indigo-500 border-b border-transparent">
+                        </div>
+                        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                            <label class="block text-slate-400 text-[11px] font-medium uppercase tracking-wider mb-0.5" id="lblDate">Dátum</label>
+                            <input type="text" id="metaDate" placeholder="ÉÉÉÉ-HH-NN" class="w-full bg-transparent font-medium text-slate-800 focus:outline-none focus:border-indigo-500 border-b border-transparent">
+                        </div>
+                        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                            <label class="block text-slate-400 text-[11px] font-medium uppercase tracking-wider mb-0.5" id="lblPayment">Fizetési Mód</label>
+                            <input type="text" id="metaPayment" placeholder="Kártya / Készpénz" class="w-full bg-transparent font-medium text-slate-800 focus:outline-none focus:border-indigo-500 border-b border-transparent">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Line Items Table -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex-grow flex flex-col overflow-hidden">
+                    <div class="flex justify-between items-center mb-3">
+                        <span class="text-xs font-semibold uppercase text-slate-400 tracking-wider" id="lblItemsTitle">Tételek Listája</span>
+                        <button id="addRowBtn" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center space-x-1">
+                            <i class="fa-solid fa-plus"></i>
+                            <span id="btnAddItem">+ Új tétel</span>
+                        </button>
+                    </div>
+
+                    <!-- Table Container -->
+                    <div class="overflow-x-auto flex-grow min-h-[220px]">
+                        <table class="w-full text-left text-xs sm:text-sm border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-200 bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
+                                    <th class="py-2 px-2 font-medium" id="thDesc">Tétel megnevezése</th>
+                                    <th class="py-2 px-2 font-medium w-16 text-center" id="thQty">Menny.</th>
+                                    <th class="py-2 px-2 font-medium w-28 text-right" id="thPrice">Egységár</th>
+                                    <th class="py-2 px-2 font-medium w-28 text-right" id="thTotal">Összesen</th>
+                                    <th class="py-2 px-1 w-8 text-center"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemsTableBody" class="divide-y divide-slate-100 text-slate-700">
+                                <tr id="emptyRow">
+                                    <td colspan="5" class="py-8 text-center text-slate-400 italic" id="emptyRowText">
+                                        Még nincsenek tételek. Tölts fel egy nyugtát a feldolgozáshoz.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Subtotals & Totals Footer -->
+                    <div class="mt-4 border-t border-slate-200 pt-3 flex flex-col space-y-1.5 items-end text-xs sm:text-sm">
+                        <div class="flex justify-between w-56 text-slate-500">
+                            <span id="lblSubtotal">Részösszeg:</span>
+                            <div class="flex items-center space-x-1">
+                                <input type="number" step="any" id="metaSubtotal" value="0" class="w-24 text-right bg-transparent focus:outline-none rounded px-1">
+                                <span class="curr-lbl">Ft</span>
+                            </div>
+                        </div>
+                        <div class="flex justify-between w-56 text-slate-500">
+                            <span id="lblTax">ÁFA:</span>
+                            <div class="flex items-center space-x-1">
+                                <input type="number" step="any" id="metaTax" value="0" class="w-24 text-right bg-transparent focus:outline-none rounded px-1">
+                                <span class="curr-lbl">Ft</span>
+                            </div>
+                        </div>
+                        <div class="flex justify-between w-56 font-bold text-slate-900 text-base border-t border-slate-200 pt-1.5">
+                            <span id="lblGrandTotal">Végösszeg:</span>
+                            <div class="flex items-center space-x-1 text-indigo-600">
+                                <input type="number" step="any" id="metaTotal" value="0" class="w-28 text-right bg-transparent focus:outline-none rounded px-1 font-bold">
+                                <span class="curr-lbl">Ft</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Key Modal (Fallback if HARDCODED_API_KEY is left empty) -->
+    <div id="keyModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-800 flex items-center space-x-2">
+                    <i class="fa-solid fa-key text-indigo-600"></i>
+                    <span id="modalTitle">Gemini API Kulcs Beállítása</span>
+                </h3>
+                <button id="closeKeyModalBtn" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-4 leading-relaxed" id="modalDesc">
+                A kulcs helyben, a böngésződben (LocalStorage) tárolódik, és közvetlenül a Google API-val kommunikál.
+            </p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">API Kulcs</label>
+                    <input type="password" id="apiKeyInput" placeholder="AIzaSy..." class="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+                <div class="flex space-x-2 pt-2">
+                    <button id="saveKeyBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg text-sm transition">Mentés</button>
+                    <button id="clearKeyBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-4 py-2 rounded-lg text-sm transition">Törlés</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-slate-800 text-white text-xs sm:text-sm px-4 py-3 rounded-xl shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 z-50 flex items-center space-x-2">
+        <i id="toastIcon" class="fa-solid fa-circle-info"></i>
+        <span id="toastMsg">Üzenet</span>
+    </div>
+
+    <!-- Script Logic -->
+    <script>
+        // ==========================================
+        // Írd be ide a Gemini API kulcsodat:
+        const HARDCODED_API_KEY = "ITT_ADD_ME_A_KULCSODAT"; 
+        // ==========================================
+
+        let currentLang = 'hu';
+        let currentCurrency = 'HUF';
+        let currencySymbol = 'Ft';
+        let apiKey = HARDCODED_API_KEY && HARDCODED_API_KEY !== "ITT_ADD_ME_A_KULCSODAT" 
+            ? HARDCODED_API_KEY 
+            : (localStorage.getItem('gemini_receipt_api_key') || '');
+            
+        let base64ImageData = null;
+        let rotationDegrees = 0;
+
+        const translations = {
+            hu: {
+                appTitle: "Nyugta Feldolgozó AI",
+                appSubtitle: "Képből Excel táblázat másodpercek alatt",
+                keyStatus: apiKey ? "Kulcs Beégetve / Mentve" : "API Kulcs",
+                lblReceiptImage: "Nyugta Kép",
+                uploadMain: "Kattints a feltöltéshez vagy húzd ide a képet",
+                btnChange: "Csere",
+                btnRotate: "Forgatás",
+                btnExtract: "Adatok kinyerése a Gemini AI-val",
+                lblExtractedDetails: "Kinyert Adatok",
+                btnExportExcel: "Excel letöltés (.xlsx)",
+                lblStore: "Bolt / Kereskedő",
+                lblDate: "Dátum",
+                lblPayment: "Fizetési Mód",
+                lblItemsTitle: "Tételek Listája",
+                btnAddItem: "+ Új tétel",
+                thDesc: "Tétel megnevezése",
+                thQty: "Menny.",
+                thPrice: "Egységár",
+                thTotal: "Összesen",
+                emptyRow: "Még nincsenek tételek. Tölts fel egy nyugtát a feldolgozáshoz.",
+                lblSubtotal: "Részösszeg:",
+                lblTax: "ÁFA:",
+                lblGrandTotal: "Végösszeg:",
+                modalTitle: "Gemini API Kulcs Beállítása",
+                modalDesc: "A kulcs helyben, a böngésződben (LocalStorage) tárolódik, és közvetlenül a Google API-val kommunikál.",
+                saveKey: "Mentés",
+                clearKey: "Törlés"
+            },
+            en: {
+                appTitle: "Receipt Extractor AI",
+                appSubtitle: "Convert images to Excel tables in seconds",
+                keyStatus: apiKey ? "Key Active" : "Set API Key",
+                lblReceiptImage: "Receipt Image",
+                uploadMain: "Click to upload image or drag & drop",
+                btnChange: "Change",
+                btnRotate: "Rotate",
+                btnExtract: "Extract Details with Gemini",
+                lblExtractedDetails: "Extracted Details",
+                btnExportExcel: "Export Excel (.xlsx)",
+                lblStore: "Store / Merchant",
+                lblDate: "Date",
+                lblPayment: "Payment Method",
+                lblItemsTitle: "Line Items",
+                btnAddItem: "+ Add Item",
+                thDesc: "Item Description",
+                thQty: "Qty",
+                thPrice: "Unit Price",
+                thTotal: "Line Total",
+                emptyRow: "No items extracted yet. Upload a receipt and click extract.",
+                lblSubtotal: "Subtotal:",
+                lblTax: "Tax:",
+                lblGrandTotal: "Grand Total:",
+                modalTitle: "Set Gemini API Key",
+                modalDesc: "Your key is stored locally in your browser's local storage and is only used to connect directly to Google's API.",
+                saveKey: "Save Key",
+                clearKey: "Clear"
+            }
+        };
+
+        // Hide key modal button if hardcoded key is present
+        document.addEventListener("DOMContentLoaded", () => {
+            if (HARDCODED_API_KEY && HARDCODED_API_KEY !== "ITT_ADD_ME_A_KULCSODAT") {
+                document.getElementById('openKeyModalBtn').style.display = 'none';
+            }
+            setLanguage('hu');
+        });
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            document.getElementById('langHuBtn').className = lang === 'hu' ? 'px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-sm transition' : 'px-2.5 py-1 rounded-md text-indigo-200 hover:text-white transition';
+            document.getElementById('langEnBtn').className = lang === 'en' ? 'px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-sm transition' : 'px-2.5 py-1 rounded-md text-indigo-200 hover:text-white transition';
+            
+            const t = translations[lang];
+            document.getElementById('appTitle').textContent = t.appTitle;
+            document.getElementById('appSubtitle').textContent = t.appSubtitle;
+            document.getElementById('keyStatusText').textContent = t.keyStatus;
+            document.getElementById('lblReceiptImage').textContent = t.lblReceiptImage;
+            document.getElementById('uploadMainText').textContent = t.uploadMain;
+            document.getElementById('btnChange').textContent = t.btnChange;
+            document.getElementById('btnRotate').textContent = t.btnRotate;
+            document.getElementById('btnExtract').textContent = t.btnExtract;
+            document.getElementById('lblExtractedDetails').textContent = t.lblExtractedDetails;
+            document.getElementById('btnExportExcel').textContent = t.btnExportExcel;
+            document.getElementById('lblStore').textContent = t.lblStore;
+            document.getElementById('lblDate').textContent = t.lblDate;
+            document.getElementById('lblPayment').textContent = t.lblPayment;
+            document.getElementById('lblItemsTitle').textContent = t.lblItemsTitle;
+            document.getElementById('btnAddItem').textContent = t.btnAddItem;
+            document.getElementById('thDesc').textContent = t.thDesc;
+            document.getElementById('thQty').textContent = t.thQty;
+            document.getElementById('thPrice').textContent = t.thPrice;
+            document.getElementById('thTotal').textContent = t.thTotal;
+            document.getElementById('lblSubtotal').textContent = t.lblSubtotal;
+            document.getElementById('lblTax').textContent = t.lblTax;
+            document.getElementById('lblGrandTotal').textContent = t.lblGrandTotal;
+            document.getElementById('modalTitle').textContent = t.modalTitle;
+            document.getElementById('modalDesc').textContent = t.modalDesc;
+            document.getElementById('saveKeyBtn').textContent = t.saveKey;
+            document.getElementById('clearKeyBtn').textContent = t.clearKey;
+
+            const emptyRowText = document.getElementById('emptyRowText');
+            if (emptyRowText) emptyRowText.textContent = t.emptyRow;
+        }
+
+        function handleCurrencyChange() {
+            currentCurrency = document.getElementById('currencySelect').value;
+            switch(currentCurrency) {
+                case 'HUF': currencySymbol = 'Ft'; break;
+                case 'EUR': currencySymbol = '€'; break;
+                case 'USD': currencySymbol = '$'; break;
+                case 'GBP': currencySymbol = '£'; break;
+            }
+            document.querySelectorAll('.curr-lbl').forEach(el => el.textContent = currencySymbol);
+        }
+
+        // Elements & Listeners
+        const dropZone = document.getElementById('dropZone');
+        const imageInput = document.getElementById('imageInput');
+        const uploadPlaceholder = document.getElementById('uploadPlaceholder');
+        const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+        const imagePreview = document.getElementById('imagePreview');
+        const extractBtn = document.getElementById('extractBtn');
+        const itemsTableBody = document.getElementById('itemsTableBody');
+        const addRowBtn = document.getElementById('addRowBtn');
+        const exportExcelBtn = document.getElementById('exportExcelBtn');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+
+        const keyModal = document.getElementById('keyModal');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const saveKeyBtn = document.getElementById('saveKeyBtn');
+        const clearKeyBtn = document.getElementById('clearKeyBtn');
+        const openKeyModalBtn = document.getElementById('openKeyModalBtn');
+        const closeKeyModalBtn = document.getElementById('closeKeyModalBtn');
+
+        const metaStore = document.getElementById('metaStore');
+        const metaDate = document.getElementById('metaDate');
+        const metaPayment = document.getElementById('metaPayment');
+        const metaSubtotal = document.getElementById('metaSubtotal');
+        const metaTax = document.getElementById('metaTax');
+        const metaTotal = document.getElementById('metaTotal');
+
+        openKeyModalBtn.addEventListener('click', () => {
+            apiKeyInput.value = apiKey;
+            keyModal.classList.remove('hidden');
+        });
+        closeKeyModalBtn.addEventListener('click', () => keyModal.classList.add('hidden'));
+        saveKeyBtn.addEventListener('click', () => {
+            apiKey = apiKeyInput.value.trim();
+            localStorage.setItem('gemini_receipt_api_key', apiKey);
+            keyModal.classList.add('hidden');
+            showToast('API kulcs sikeresen mentve!', 'success');
+        });
+        clearKeyBtn.addEventListener('click', () => {
+            apiKey = '';
+            apiKeyInput.value = '';
+            localStorage.removeItem('gemini_receipt_api_key');
+            showToast('API kulcs törölve', 'info');
+        });
+
+        dropZone.addEventListener('click', () => imageInput.click());
+        imageInput.addEventListener('change', (e) => { if (e.target.files.length) handleFile(e.target.files[0]); });
+        
+        document.getElementById('changeImgBtn').addEventListener('click', (e) => { e.stopPropagation(); imageInput.click(); });
+        document.getElementById('rotateImgBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            rotationDegrees = (rotationDegrees + 90) % 360;
+            imagePreview.style.transform = `rotate(${rotationDegrees}deg)`;
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                showToast('Kérjük, érvényes képfájlt tölts fel', 'error');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const fullBase64 = e.target.result;
+                base64ImageData = fullBase64.split(',')[1];
+                imagePreview.src = fullBase64;
+                uploadPlaceholder.classList.add('hidden');
+                imagePreviewContainer.classList.remove('hidden');
+                extractBtn.disabled = false;
+                rotationDegrees = 0;
+                imagePreview.style.transform = 'none';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Gemini AI API Call
+        extractBtn.addEventListener('click', async () => {
+            if (!apiKey || apiKey === "ITT_ADD_ME_A_KULCSODAT") {
+                keyModal.classList.remove('hidden');
+                showToast('Előbb add meg az API kulcsot!', 'error');
+                return;
+            }
+            if (!base64ImageData) {
+                showToast('Előbb tölts fel egy képet!', 'error');
+                return;
+            }
+
+            extractBtn.disabled = true;
+            extractBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-amber-300"></i><span>Feldolgozás folyamatban...</span>`;
+
+            try {
+                const result = await callGeminiExtractApi(base64ImageData, apiKey);
+                populateTableAndMeta(result);
+                showToast('Nyugta sikeresen beolvasva!', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Hiba történt a feldolgozás során', 'error');
+            } finally {
+                extractBtn.disabled = false;
+                extractBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i><span>${translations[currentLang].btnExtract}</span>`;
+            }
+        });
+
+        async function callGeminiExtractApi(base64Image, key) {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${key}`;
+
+            const promptText = `Extract the full receipt details accurately. Language preference for items/store name should match the receipt. Default currency context: ${currentCurrency}. Respond strictly with JSON matching the schema.`;
+
+            const payload = {
+                contents: [
+                    {
+                        role: "user",
+                        parts: [
+                            { text: promptText },
+                            {
+                                inlineData: {
+                                    mimeType: "image/jpeg",
+                                    data: base64Image
+                                }
+                            }
+                        ]
+                    }
+                ],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            storeName: { type: "STRING" },
+                            date: { type: "STRING" },
+                            paymentMethod: { type: "STRING" },
+                            subtotal: { type: "NUMBER" },
+                            tax: { type: "NUMBER" },
+                            total: { type: "NUMBER" },
+                            items: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        description: { type: "STRING" },
+                                        quantity: { type: "NUMBER" },
+                                        price: { type: "NUMBER" },
+                                        total: { type: "NUMBER" }
+                                    },
+                                    required: ["description", "price"]
+                                }
+                            }
+                        },
+                        required: ["storeName", "items", "total"]
+                    }
+                }
+            };
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || `API hiba (${response.status})`);
+            }
+
+            const data = await response.json();
+            const jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!jsonText) throw new Error("Nem érkezett válasz a modelltől.");
+
+            return JSON.parse(jsonText);
+        }
+
+        function populateTableAndMeta(data) {
+            metaStore.value = data.storeName || '';
+            metaDate.value = data.date || '';
+            metaPayment.value = data.paymentMethod || '';
+            metaSubtotal.value = data.subtotal ? data.subtotal : 0;
+            metaTax.value = data.tax ? data.tax : 0;
+            metaTotal.value = data.total ? data.total : 0;
+
+            itemsTableBody.innerHTML = '';
+
+            if (data.items && data.items.length > 0) {
+                data.items.forEach(item => addRowToTable(item.description, item.quantity, item.price, item.total));
+            } else {
+                addRowToTable('', 1, 0, 0);
+            }
+
+            exportExcelBtn.disabled = false;
+            exportCsvBtn.disabled = false;
+            recalculateTotals();
+        }
+
+        function addRowToTable(desc = '', qty = 1, price = 0, total = null) {
+            const emptyRow = document.getElementById('emptyRow');
+            if (emptyRow) emptyRow.remove();
+
+            const calculatedTotal = total !== null && total !== undefined ? total : (qty * price);
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-50 transition";
+            tr.innerHTML = `
+                <td class="py-1.5 px-2">
+                    <input type="text" class="w-full bg-transparent focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1.5 py-1 item-desc" value="${escapeHtml(desc)}" placeholder="Tétel neve">
+                </td>
+                <td class="py-1.5 px-2">
+                    <input type="number" step="any" class="w-full text-center bg-transparent focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-1 item-qty" value="${qty || 1}">
+                </td>
+                <td class="py-1.5 px-2">
+                    <input type="number" step="any" class="w-full text-right bg-transparent focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-1 item-price" value="${price || 0}">
+                </td>
+                <td class="py-1.5 px-2">
+                    <input type="number" step="any" class="w-full text-right bg-transparent focus:outline-none focus:ring-1 focus:ring-indigo-300 rounded px-1 py-1 item-total" value="${calculatedTotal || 0}">
+                </td>
+                <td class="py-1.5 px-1 text-center">
+                    <button class="text-slate-300 hover:text-red-500 delete-row-btn transition">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </td>
+            `;
+
+            itemsTableBody.appendChild(tr);
+
+            const qtyInput = tr.querySelector('.item-qty');
+            const priceInput = tr.querySelector('.item-price');
+            const totalInput = tr.querySelector('.item-total');
+            const deleteBtn = tr.querySelector('.delete-row-btn');
+
+            const autoCalcLineTotal = () => {
+                const q = parseFloat(qtyInput.value) || 0;
+                const p = parseFloat(priceInput.value) || 0;
+                totalInput.value = (q * p);
+                recalculateTotals();
+            };
+
+            qtyInput.addEventListener('input', autoCalcLineTotal);
+            priceInput.addEventListener('input', autoCalcLineTotal);
+            totalInput.addEventListener('input', recalculateTotals);
+
+            deleteBtn.addEventListener('click', () => {
+                tr.remove();
+                if (itemsTableBody.children.length === 0) {
+                    itemsTableBody.innerHTML = `<tr id="emptyRow"><td colspan="5" class="py-8 text-center text-slate-400 italic" id="emptyRowText">${translations[currentLang].emptyRow}</td></tr>`;
+                }
+                recalculateTotals();
+            });
+        }
+
+        addRowBtn.addEventListener('click', () => addRowToTable());
+
+        function recalculateTotals() {
+            let sum = 0;
+            document.querySelectorAll('.item-total').forEach(t => {
+                sum += parseFloat(t.value) || 0;
+            });
+
+            if (!metaSubtotal.dataset.manual) {
+                metaSubtotal.value = sum;
+            }
+            
+            const tax = parseFloat(metaTax.value) || 0;
+            const subtotal = parseFloat(metaSubtotal.value) || 0;
+
+            metaTotal.value = (subtotal + tax);
+        }
+
+        metaTax.addEventListener('input', recalculateTotals);
+        metaSubtotal.addEventListener('input', () => {
+            metaSubtotal.dataset.manual = "true";
+            recalculateTotals();
+        });
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+            });
+        }
+
+        // Export Excel & CSV
+        exportExcelBtn.addEventListener('click', () => exportData('excel'));
+        exportCsvBtn.addEventListener('click', () => exportData('csv'));
+
+        function exportData(format) {
+            const rows = [];
+            rows.push(["RECEIPT SUMMARY"]);
+            rows.push([translations[currentLang].lblStore, metaStore.value]);
+            rows.push([translations[currentLang].lblDate, metaDate.value]);
+            rows.push([translations[currentLang].lblPayment, metaPayment.value]);
+            rows.push([]);
+            rows.push([translations[currentLang].thDesc, translations[currentLang].thQty, translations[currentLang].thPrice, translations[currentLang].thTotal]);
+
+            itemsTableBody.querySelectorAll('tr:not(#emptyRow)').forEach(tr => {
+                rows.push([
+                    tr.querySelector('.item-desc').value,
+                    parseFloat(tr.querySelector('.item-qty').value) || 0,
+                    parseFloat(tr.querySelector('.item-price').value) || 0,
+                    parseFloat(tr.querySelector('.item-total').value) || 0
+                ]);
+            });
+
+            rows.push([]);
+            rows.push(["", "", translations[currentLang].lblSubtotal, parseFloat(metaSubtotal.value) || 0]);
+            rows.push(["", "", translations[currentLang].lblTax, parseFloat(metaTax.value) || 0]);
+            rows.push(["", "", translations[currentLang].lblGrandTotal, parseFloat(metaTotal.value) || 0]);
+
+            const filename = (metaStore.value ? metaStore.value.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'receipt') + '_extracted';
+
+            if (format === 'excel') {
+                const worksheet = XLSX.utils.aoa_to_sheet(rows);
+                worksheet['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 12 }, { wch: 12 }];
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Receipt");
+                XLSX.writeFile(workbook, `${filename}.xlsx`);
+                showToast('Excel letöltve!', 'success');
+            } else {
+                const worksheet = XLSX.utils.aoa_to_sheet(rows);
+                const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
+                const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.setAttribute('download', `${filename}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showToast('CSV letöltve!', 'success');
+            }
+        }
+
+        function showToast(msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMsg');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastMsg.textContent = msg;
+            toastIcon.className = type === 'success' ? 'fa-solid fa-circle-check text-emerald-400' : (type === 'error' ? 'fa-solid fa-triangle-exclamation text-rose-400' : 'fa-solid fa-circle-info text-sky-400');
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
